@@ -49,7 +49,12 @@ namespace LibGit2Sharp.Core
                     SortBy = CommitSortStrategies.Reverse | CommitSortStrategies.Topological
                 };
 
-                var commits = repo.Commits.QueryBy(filter);
+                var commits = repo.Commits.QueryBy(filter).ToArray();
+                if (commits.Length == 0)
+                {
+                    Console.WriteLine($"no commits! refs: {refsToRewrite.Count}");
+                    commits = targetedCommits.ToArray();
+                }
                 foreach (var commit in commits)
                 {
                     RewriteCommit(commit, options);
@@ -61,6 +66,11 @@ namespace LibGit2Sharp.Core
                 {
                     // TODO: Rewrite refs/notes/* properly
                     if (reference.CanonicalName.StartsWith("refs/notes/"))
+                    {
+                        continue;
+                    }
+
+                    if (reference.CanonicalName.StartsWith("refs/stitch/"))
                     {
                         continue;
                     }
@@ -168,15 +178,15 @@ namespace LibGit2Sharp.Core
 
             string backupName = backupRefsNamespace + oldRef.CanonicalName.Substring("refs/".Length);
 
-            if (repo.Refs.Resolve<Reference>(backupName) != null)
+            /*if (repo.Refs.Resolve<Reference>(backupName) != null)
             {
                 throw new InvalidOperationException(String.Format(CultureInfo.InvariantCulture,
                                                                   "Can't back up reference '{0}' - '{1}' already exists",
                                                                   oldRef.CanonicalName,
                                                                   backupName));
-            }
+            }*/
 
-            repo.Refs.Add(backupName, oldRef.TargetIdentifier, "filter-branch: backup");
+            repo.Refs.Add(backupName, oldRef.TargetIdentifier, "filter-branch: backup", true);
             rollbackActions.Enqueue(() => repo.Refs.Remove(backupName));
 
             if (newTarget == null)
@@ -207,7 +217,7 @@ namespace LibGit2Sharp.Core
             // Find the new parents
             var newParents = commit.Parents;
 
-            if (targetedCommits.Contains(commit))
+            //if (targetedCommits.Contains(commit))
             {
                 // Get the new commit header
                 if (options.CommitHeaderRewriter != null)
@@ -249,6 +259,8 @@ namespace LibGit2Sharp.Core
                                                              newTree,
                                                              mappedNewParents,
                                                              options.PrettifyMessages);
+
+            options.OnRewritten?.Invoke(commit, newCommit);
 
             // Record the rewrite
             objectMap[commit] = newCommit;

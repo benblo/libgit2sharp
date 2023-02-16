@@ -36,6 +36,7 @@ namespace LibGit2Sharp
         /// Rewriter for commit trees.
         /// </summary>
         public Func<Commit, TreeDefinition> CommitTreeRewriter { get; set; }
+        public Action<Commit, Commit> OnRewritten { get; set; }
 
         /// <summary>
         /// Rewriter for tag names. This is called with
