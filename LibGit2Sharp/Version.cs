@@ -1,6 +1,8 @@
 ﻿using System.Globalization;
 using LibGit2Sharp.Core;
 
+[assembly:System.Runtime.CompilerServices.InternalsVisibleTo("DvcsSandbox")]
+
 namespace LibGit2Sharp
 {
     /// <summary>

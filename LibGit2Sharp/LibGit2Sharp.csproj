@@ -12,7 +12,7 @@
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <DebugType>embedded</DebugType>
-    <SignAssembly>true</SignAssembly>
+    <SignAssembly>False</SignAssembly>
     <AssemblyOriginatorKeyFile>..\libgit2sharp.snk</AssemblyOriginatorKeyFile>
     <PackageIcon>square-logo.png</PackageIcon>
     <PackageLicenseFile>App_Readme/LICENSE.md</PackageLicenseFile>
