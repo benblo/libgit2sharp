@@ -801,6 +801,9 @@ namespace LibGit2Sharp.Core
         #endregion
 
         [DllImport(libgit2, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int git_libgit2_version(out int major, out int minor, out int rev);
+
+        [DllImport(libgit2, CallingConvention = CallingConvention.Cdecl)]
         internal static extern unsafe int git_graph_ahead_behind(out UIntPtr ahead, out UIntPtr behind, git_repository* repo, ref GitOid one, ref GitOid two);
 
         [DllImport(libgit2, CallingConvention = CallingConvention.Cdecl)]

@@ -13,6 +13,11 @@ namespace LibGit2Sharp
     public static class GlobalSettings
     {
         private static readonly Lazy<Version> version = new Lazy<Version>(Version.Build);
+        private static readonly Lazy<System.Version> libGit2Version = new Lazy<System.Version>(() =>
+        {
+            int res = NativeMethods.git_libgit2_version(out int major, out int minor, out int rev);
+            return res != 0 ? null : new System.Version(major, minor, rev);
+        });
         private static readonly Dictionary<Filter, FilterRegistration> registeredFilters;
         private static readonly bool nativeLibraryPathAllowed;
 
@@ -72,6 +77,11 @@ namespace LibGit2Sharp
         /// library.
         /// </summary>
         public static Version Version => version.Value;
+
+        /// <summary>
+        /// Returns information related to the current libgit2 library.
+        /// </summary>
+        public static System.Version LibGit2Version => libGit2Version.Value;
 
         /// <summary>
         /// Registers a new <see cref="SmartSubtransport"/> as a custom
