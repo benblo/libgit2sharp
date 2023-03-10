@@ -44,7 +44,17 @@ namespace LibGit2Sharp
             globalConfigPath = globalConfigurationFileLocation ?? Proxy.git_config_find_global();
             xdgConfigPath = xdgConfigurationFileLocation ?? Proxy.git_config_find_xdg();
             systemConfigPath = systemConfigurationFileLocation ?? Proxy.git_config_find_system();
-            programDataConfigPath = Proxy.git_config_find_programdata();
+            try
+            {
+                programDataConfigPath = Proxy.git_config_find_programdata();
+            }
+            catch (LibGit2SharpException e)
+            {
+                if (e.Message != "the ProgramData file 'config' doesn't exist: ")
+                {
+                    throw;
+                }
+            }
 
             Init(repository);
         }
