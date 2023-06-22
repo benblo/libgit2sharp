@@ -178,6 +178,9 @@ namespace LibGit2Sharp
 
     internal class TransientTreeTreeEntryDefinition : TransientTreeEntryDefinition
     {
+        public readonly TreeDefinition TreeDefinition;
+        public TransientTreeTreeEntryDefinition(TreeDefinition td) => TreeDefinition = td;
+
         public override Mode Mode
         {
             get { return Mode.Directory; }

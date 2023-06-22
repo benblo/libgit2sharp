@@ -46,17 +46,6 @@ namespace LibGit2Sharp
             return From(commit.Tree);
         }
 
-        private void AddEntry(string targetTreeEntryName, TreeEntryDefinition treeEntryDefinition)
-        {
-            if (entries.ContainsKey(targetTreeEntryName))
-            {
-                WrapTree(targetTreeEntryName, treeEntryDefinition);
-                return;
-            }
-
-            entries.Add(targetTreeEntryName, treeEntryDefinition);
-        }
-
         /// <summary>
         /// Removes the <see cref="TreeEntryDefinition"/> located at each of the
         /// specified <paramref name="treeEntryPaths"/>.
@@ -123,17 +112,6 @@ namespace LibGit2Sharp
             Ensure.ArgumentNotNullOrEmptyString(targetTreeEntryPath, "targetTreeEntryPath");
             Ensure.ArgumentNotNull(treeEntryDefinition, "treeEntryDefinition");
 
-            if (treeEntryDefinition is TransientTreeTreeEntryDefinition)
-            {
-                throw new InvalidOperationException(string.Format(CultureInfo.InvariantCulture,
-                                                                  "The {0} references a target which hasn't been created in the {1} yet. " +
-                                                                  "This situation can occur when the target is a whole new {2} being created, " +
-                                                                  "or when an existing {2} is being updated because some of its children were added/removed.",
-                                                                  typeof(TreeEntryDefinition).Name,
-                                                                  typeof(ObjectDatabase).Name,
-                                                                  typeof(Tree).Name));
-            }
-
             Tuple<string, string> segments = ExtractPosixLeadingSegment(targetTreeEntryPath);
 
             if (segments.Item2 != null)
@@ -143,7 +121,11 @@ namespace LibGit2Sharp
             }
             else
             {
-                AddEntry(segments.Item1, treeEntryDefinition);
+                entries[segments.Item1] = treeEntryDefinition;
+                if (treeEntryDefinition is TransientTreeTreeEntryDefinition transient)
+                    unwrappedTrees[segments.Item1] = transient.TreeDefinition;
+                else
+                    unwrappedTrees.Remove(segments.Item1);
             }
 
             return this;
@@ -303,8 +285,7 @@ namespace LibGit2Sharp
                 td = new TreeDefinition();
             }
 
-            entries[treeName] = new TransientTreeTreeEntryDefinition();
-
+            entries[treeName] = new TransientTreeTreeEntryDefinition(td);
             unwrappedTrees.Add(treeName, td);
             return td;
         }
@@ -358,12 +339,6 @@ namespace LibGit2Sharp
             }
 
             unwrappedTrees.Clear();
-        }
-
-        private void WrapTree(string entryName, TreeEntryDefinition treeEntryDefinition)
-        {
-            entries[entryName] = treeEntryDefinition;
-            unwrappedTrees.Remove(entryName);
         }
 
         /// <summary>
