@@ -94,19 +94,16 @@ namespace LibGit2Sharp
             if (segments.Item2 == null)
             {
                 entries.Remove(segments.Item1);
-            }
-
-            if (!unwrappedTrees.ContainsKey(segments.Item1))
-            {
+                unwrappedTrees.Remove(segments.Item1);
                 return this;
             }
 
-            if (segments.Item2 != null)
-            {
-                unwrappedTrees[segments.Item1].Remove(segments.Item2);
-            }
+            // if we have a second segment, then we _have_ to have an unwrapped sub-TD, because of this[treeEntryPath] above
+            var entryTd = unwrappedTrees[segments.Item1];
 
-            if (unwrappedTrees[segments.Item1].entries.Count == 0)
+            entryTd.Remove(segments.Item2);
+
+            if (entryTd.entries.Count == 0)
             {
                 unwrappedTrees.Remove(segments.Item1);
                 entries.Remove(segments.Item1);
