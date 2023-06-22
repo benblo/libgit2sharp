@@ -109,8 +109,13 @@ namespace LibGit2Sharp
         /// <returns>The current <see cref="TreeDefinition"/>.</returns>
         public virtual TreeDefinition Add(string targetTreeEntryPath, TreeEntryDefinition treeEntryDefinition)
         {
-            Ensure.ArgumentNotNullOrEmptyString(targetTreeEntryPath, "targetTreeEntryPath");
-            Ensure.ArgumentNotNull(treeEntryDefinition, "treeEntryDefinition");
+            if (string.IsNullOrEmpty(targetTreeEntryPath))
+            {
+                // if given an empty path and a tree, merge its contents instead of adding it as a child
+                return Merge(treeEntryDefinition);
+            }
+
+            Ensure.ArgumentNotNull(treeEntryDefinition, nameof(treeEntryDefinition));
 
             Tuple<string, string> segments = ExtractPosixLeadingSegment(targetTreeEntryPath);
 
@@ -126,6 +131,44 @@ namespace LibGit2Sharp
                     unwrappedTrees[segments.Item1] = transient.TreeDefinition;
                 else
                     unwrappedTrees.Remove(segments.Item1);
+            }
+
+            return this;
+        }
+
+        /// <summary>
+        /// Assuming the given <see cref="TreeEntryDefinition"/> is a <see cref="TransientTreeTreeEntryDefinition"/>,
+        /// merge its content into our own.
+        /// </summary>
+        /// <param name="treeEntryDefinition">The <see cref="TransientTreeTreeEntryDefinition"/> to merge.</param>
+        /// <returns>The current <see cref="TreeDefinition"/>.</returns>
+        public virtual TreeDefinition Merge(TreeEntryDefinition treeEntryDefinition)
+        {
+            Ensure.ArgumentNotNull(treeEntryDefinition, nameof(treeEntryDefinition));
+
+            var transientTed = treeEntryDefinition as TransientTreeTreeEntryDefinition;
+            if (transientTed == null)
+            {
+                throw new InvalidOperationException(
+                    $"The given entry cannot be merged!" +
+                    $" Expected type {nameof(TransientTreeTreeEntryDefinition)}, given {treeEntryDefinition.GetType().Name}.");
+            }
+
+            return Merge(transientTed.TreeDefinition);
+        }
+
+        /// <summary>
+        /// Merge the content of the given <see cref="TreeDefinition"/> into our own.
+        /// </summary>
+        /// <param name="treeDefinition">The <see cref="TreeDefinition"/> to merge.</param>
+        /// <returns>The current <see cref="TreeDefinition"/>.</returns>
+        public virtual TreeDefinition Merge(TreeDefinition treeDefinition)
+        {
+            Ensure.ArgumentNotNull(treeDefinition, nameof(treeDefinition));
+
+            foreach (var pair in treeDefinition.entries)
+            {
+                Add(pair.Key, pair.Value);
             }
 
             return this;
