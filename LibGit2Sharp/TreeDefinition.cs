@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using LibGit2Sharp.Core;
@@ -109,13 +110,13 @@ namespace LibGit2Sharp
         /// <returns>The current <see cref="TreeDefinition"/>.</returns>
         public virtual TreeDefinition Add(string targetTreeEntryPath, TreeEntryDefinition treeEntryDefinition)
         {
+            Ensure.ArgumentNotNull(treeEntryDefinition, nameof(treeEntryDefinition));
+
             if (string.IsNullOrEmpty(targetTreeEntryPath))
             {
                 // if given an empty path and a tree, merge its contents instead of adding it as a child
-                return Merge(treeEntryDefinition);
+                return Merge(treeEntryDefinition, MergeConflictResolution.Throw);
             }
-
-            Ensure.ArgumentNotNull(treeEntryDefinition, nameof(treeEntryDefinition));
 
             Tuple<string, string> segments = ExtractPosixLeadingSegment(targetTreeEntryPath);
 
@@ -126,52 +127,19 @@ namespace LibGit2Sharp
             }
             else
             {
-                entries[segments.Item1] = treeEntryDefinition;
-                if (treeEntryDefinition is TransientTreeTreeEntryDefinition transient)
-                    unwrappedTrees[segments.Item1] = transient.TreeDefinition;
-                else
-                    unwrappedTrees.Remove(segments.Item1);
+                AddEntry(segments.Item1, treeEntryDefinition);
             }
 
             return this;
         }
 
-        /// <summary>
-        /// Assuming the given <see cref="TreeEntryDefinition"/> is a <see cref="TransientTreeTreeEntryDefinition"/>,
-        /// merge its content into our own.
-        /// </summary>
-        /// <param name="treeEntryDefinition">The <see cref="TransientTreeTreeEntryDefinition"/> to merge.</param>
-        /// <returns>The current <see cref="TreeDefinition"/>.</returns>
-        public virtual TreeDefinition Merge(TreeEntryDefinition treeEntryDefinition)
+        private void AddEntry(string targetTreeEntryName, TreeEntryDefinition treeEntryDefinition)
         {
-            Ensure.ArgumentNotNull(treeEntryDefinition, nameof(treeEntryDefinition));
-
-            var transientTed = treeEntryDefinition as TransientTreeTreeEntryDefinition;
-            if (transientTed == null)
-            {
-                throw new InvalidOperationException(
-                    $"The given entry cannot be merged!" +
-                    $" Expected type {nameof(TransientTreeTreeEntryDefinition)}, given {treeEntryDefinition.GetType().Name}.");
-            }
-
-            return Merge(transientTed.TreeDefinition);
-        }
-
-        /// <summary>
-        /// Merge the content of the given <see cref="TreeDefinition"/> into our own.
-        /// </summary>
-        /// <param name="treeDefinition">The <see cref="TreeDefinition"/> to merge.</param>
-        /// <returns>The current <see cref="TreeDefinition"/>.</returns>
-        public virtual TreeDefinition Merge(TreeDefinition treeDefinition)
-        {
-            Ensure.ArgumentNotNull(treeDefinition, nameof(treeDefinition));
-
-            foreach (var pair in treeDefinition.entries)
-            {
-                Add(pair.Key, pair.Value);
-            }
-
-            return this;
+            entries[targetTreeEntryName] = treeEntryDefinition;
+            if (treeEntryDefinition is TransientTreeTreeEntryDefinition transient)
+                unwrappedTrees[targetTreeEntryName] = transient.TreeDefinition;
+            else
+                unwrappedTrees.Remove(targetTreeEntryName);
         }
 
         /// <summary>
@@ -282,6 +250,150 @@ namespace LibGit2Sharp
             var ted = TreeEntryDefinition.From(objectId);
 
             return Add(targetTreeEntryPath, ted);
+        }
+
+        /// Describe how to handle conflicts when merging TreeDefinitions.
+        public enum MergeConflictResolution
+        {
+            /// Keep the existing entry.
+            Keep,
+            /// Overwrite with the new entry.
+            Overwrite,
+            /// Throw an exception
+            Throw,
+        }
+
+        /// <summary>
+        /// Adds or merges a <see cref="TreeEntryDefinition"/> at the specified <paramref name="targetTreeEntryPath"/> location.
+        /// </summary>
+        /// <param name="targetTreeEntryPath">The path within this <see cref="TreeDefinition"/>.</param>
+        /// <param name="treeEntryDefinition">The <see cref="TreeEntryDefinition"/> to be stored at the described location.</param>
+        /// <param name="onConflict">What to do </param>
+        /// <returns>The current <see cref="TreeDefinition"/>.</returns>
+        public virtual TreeDefinition Merge(string targetTreeEntryPath, TreeEntryDefinition treeEntryDefinition, MergeConflictResolution onConflict)
+        {
+            Ensure.ArgumentNotNull(treeEntryDefinition, nameof(treeEntryDefinition));
+
+            if (string.IsNullOrEmpty(targetTreeEntryPath))
+            {
+                // if given an empty path and a tree, merge its contents instead of adding it as a child
+                return Merge(treeEntryDefinition, onConflict);
+            }
+
+            var (name, subPath) = ExtractPosixLeadingSegment(targetTreeEntryPath);
+
+            if (subPath != null)
+            {
+                // drill down
+                var td = RetrieveOrBuildTreeDefinition(name, true);
+                td.Merge(subPath, treeEntryDefinition, onConflict);
+                return this;
+            }
+
+            // check if an entry already exists with that name
+            if (entries.TryGetValue(name, out var existingEntry))
+            {
+                Debug.Assert(treeEntryDefinition.TargetType == existingEntry.TargetType);
+
+                if (treeEntryDefinition.TargetType == TreeEntryTargetType.Tree)
+                {
+                    // existing subtree: merge the entry into it
+                    //Console.WriteLine($"merging existing entry {name}");
+                    var existingTd = RetrieveOrBuildTreeDefinition(name, false);
+                    existingTd.Merge(treeEntryDefinition, onConflict);
+                    return this;
+                }
+
+                // existing entry is not a subtree
+
+                // if the new and existing entries are identical: no conflict
+                if (treeEntryDefinition.Target == existingEntry.Target)
+                {
+                    return this;
+                }
+
+                // new entry conflicts with the existing one
+                switch (onConflict)
+                {
+                    case MergeConflictResolution.Keep:
+                        //Console.WriteLine($"Merge conflict: file entry already exists, keeping: {name}");
+                        return this;
+
+                    case MergeConflictResolution.Overwrite:
+                        //Console.WriteLine($"Merge conflict: file entry already exists, overwriting: {name}");
+                        break; // continue to "add" below -> overwrite
+
+                    case MergeConflictResolution.Throw:
+                        throw new InvalidOperationException("Merge conflict: file entry already exists! Only directories can be merged.");
+
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(onConflict), onConflict, null);
+                }
+            }
+
+            // entry doesn't exist, add it
+            AddEntry(name, treeEntryDefinition);
+            return this;
+        }
+
+        /// <summary>
+        /// Assuming the given <see cref="TreeEntryDefinition"/> is a <see cref="TransientTreeTreeEntryDefinition"/>,
+        /// merge its content into our own.
+        /// </summary>
+        /// <param name="treeEntryDefinition">The <see cref="TransientTreeTreeEntryDefinition"/> to merge.</param>
+        /// <param name="onConflict">What to do </param>
+        /// <returns>The current <see cref="TreeDefinition"/>.</returns>
+        public virtual TreeDefinition Merge(TreeEntryDefinition treeEntryDefinition, MergeConflictResolution onConflict)
+        {
+            Ensure.ArgumentNotNull(treeEntryDefinition, nameof(treeEntryDefinition));
+
+            if (treeEntryDefinition is TransientTreeTreeEntryDefinition transientTed)
+            {
+                return Merge(transientTed.TreeDefinition, onConflict);
+            }
+
+            if (treeEntryDefinition.TargetType == TreeEntryTargetType.Tree)
+            {
+                return Merge((Tree)treeEntryDefinition.Target, onConflict);
+            }
+
+            throw new InvalidOperationException("The given entry cannot be merged!");
+        }
+
+        /// <summary>
+        /// Merge the content of the given <see cref="TreeDefinition"/> into our own.
+        /// </summary>
+        /// <param name="treeDefinition">The <see cref="TreeDefinition"/> to merge.</param>
+        /// <param name="onConflict">What to do </param>
+        /// <returns>The current <see cref="TreeDefinition"/>.</returns>
+        public virtual TreeDefinition Merge(TreeDefinition treeDefinition, MergeConflictResolution onConflict)
+        {
+            Ensure.ArgumentNotNull(treeDefinition, nameof(treeDefinition));
+
+            foreach (var pair in treeDefinition.entries)
+            {
+                Merge(pair.Key, pair.Value, onConflict);
+            }
+
+            return this;
+        }
+
+        /// <summary>
+        /// Merge the content of the given <see cref="Tree"/> into our own.
+        /// </summary>
+        /// <param name="tree">The <see cref="Tree"/> to merge.</param>
+        /// <param name="onConflict">What to do </param>
+        /// <returns>The current <see cref="TreeDefinition"/>.</returns>
+        public virtual TreeDefinition Merge(Tree tree, MergeConflictResolution onConflict)
+        {
+            Ensure.ArgumentNotNull(tree, nameof(tree));
+
+            foreach (TreeEntry treeEntry in tree)
+            {
+                Merge(treeEntry.Name, TreeEntryDefinition.From(treeEntry), onConflict);
+            }
+
+            return this;
         }
 
         private TreeDefinition RetrieveOrBuildTreeDefinition(string treeName, bool shouldOverWrite)
